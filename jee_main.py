@@ -17,7 +17,10 @@ import sys
 import json
 import re
 
-from jee_engine import router, math_engine, numerical_engine, physics_engine, units_engine, graph_engine
+from jee_engine import (
+    router, math_engine, numerical_engine, physics_engine, chemistry_engine,
+    biology_engine, units_engine, graph_engine,
+)
 
 
 def _extract_numbers(text: str):
@@ -93,6 +96,40 @@ def handle_physics(raw: str) -> dict:
     }
 
 
+def handle_chemistry(raw: str) -> dict:
+    lower = raw.lower()
+    nums = _extract_numbers(raw)
+
+    if ("ph of" in lower or lower.startswith("ph ")) and nums:
+        return {"operation": "ph_from_h_concentration",
+                **chemistry_engine.ph_from_h_concentration(h_conc=nums[0])}
+    if "molar mass" in lower:
+        match = re.search(r"molar mass of\s+([A-Za-z0-9\(\)]+)", raw, re.IGNORECASE)
+        if match:
+            return {"operation": "molar_mass", **chemistry_engine.molar_mass(formula=match.group(1))}
+
+    return {
+        "success": False,
+        "error": "Recognised as CHEMISTRY but could not extract enough structured "
+                 "data from free text. Use JSON mode with an explicit 'operation'.",
+    }
+
+
+def handle_biology(raw: str) -> dict:
+    lower = raw.lower()
+
+    if "gc content" in lower:
+        match = re.search(r"gc content of\s+([ACGTUacgtu]+)", raw, re.IGNORECASE)
+        if match:
+            return {"operation": "gc_content", **biology_engine.gc_content(seq_str=match.group(1))}
+
+    return {
+        "success": False,
+        "error": "Recognised as BIOLOGY but could not extract enough structured "
+                 "data from free text. Use JSON mode with an explicit 'operation'.",
+    }
+
+
 def handle_graph(raw: str) -> dict:
     match = re.search(r"y\s*=\s*(.+)", raw, re.IGNORECASE)
     expr = match.group(1).strip() if match else raw
@@ -109,6 +146,10 @@ def process_text(raw: str) -> dict:
         result = handle_unit(raw)
     elif kind == router.CATEGORY_PHYSICS:
         result = handle_physics(raw)
+    elif kind == router.CATEGORY_CHEMISTRY:
+        result = handle_chemistry(raw)
+    elif kind == router.CATEGORY_BIOLOGY:
+        result = handle_biology(raw)
     elif kind == router.CATEGORY_GRAPH:
         result = handle_graph(raw)
     elif kind == router.CATEGORY_NUMERICAL:
@@ -197,6 +238,42 @@ _PHYSICS_OPS = {
     "escape_velocity": lambda p: physics_engine.escape_velocity(**p),
 }
 
+_CHEMISTRY_OPS = {
+    "molar_mass": lambda p: chemistry_engine.molar_mass(**p),
+    "percent_composition": lambda p: chemistry_engine.percent_composition(**p),
+    "moles_from_mass": lambda p: chemistry_engine.moles_from_mass(**p),
+    "mass_from_moles": lambda p: chemistry_engine.mass_from_moles(**p),
+    "molarity": lambda p: chemistry_engine.molarity(**p),
+    "dilution": lambda p: chemistry_engine.dilution(**p),
+    "normality": lambda p: chemistry_engine.normality(**p),
+    "ideal_gas_law": lambda p: chemistry_engine.ideal_gas_law(**p),
+    "boyles_law": lambda p: chemistry_engine.boyles_law(**p),
+    "charles_law": lambda p: chemistry_engine.charles_law(**p),
+    "ph_from_h_concentration": lambda p: chemistry_engine.ph_from_h_concentration(**p),
+    "h_concentration_from_ph": lambda p: chemistry_engine.h_concentration_from_ph(**p),
+    "poh_from_oh_concentration": lambda p: chemistry_engine.poh_from_oh_concentration(**p),
+    "ph_poh_relation": lambda p: chemistry_engine.ph_poh_relation(**p),
+    "nernst_equation": lambda p: chemistry_engine.nernst_equation(**p),
+    "heat_energy": lambda p: chemistry_engine.heat_energy(**p),
+    "half_life_to_decay_constant": lambda p: chemistry_engine.half_life_to_decay_constant(**p),
+    "remaining_quantity": lambda p: chemistry_engine.remaining_quantity(**p),
+    "elapsed_time_from_decay": lambda p: chemistry_engine.elapsed_time_from_decay(**p),
+    "balance_equation": lambda p: chemistry_engine.balance_equation(**p),
+}
+
+_BIOLOGY_OPS = {
+    "transcribe_dna": lambda p: biology_engine.transcribe_dna(**p),
+    "translate_sequence": lambda p: biology_engine.translate_sequence(**p),
+    "reverse_complement": lambda p: biology_engine.reverse_complement(**p),
+    "gc_content": lambda p: biology_engine.gc_content(**p),
+    "base_composition": lambda p: biology_engine.base_composition(**p),
+    "cross": lambda p: biology_engine.cross(**p),
+    "offspring_probability": lambda p: biology_engine.offspring_probability(**p),
+    "hardy_weinberg": lambda p: biology_engine.hardy_weinberg(**p),
+    "exponential_growth": lambda p: biology_engine.exponential_growth(**p),
+    "logistic_growth": lambda p: biology_engine.logistic_growth(**p),
+}
+
 _GRAPH_OPS = {
     "plot": lambda p: graph_engine.plot_function(
         p["expression"], p.get("var", "x"), p.get("x_min", -10), p.get("x_max", 10),
@@ -214,6 +291,8 @@ _DISPATCH = {
     "numerical": _NUMERICAL_OPS,
     "unit": _UNIT_OPS,
     "physics": _PHYSICS_OPS,
+    "chemistry": _CHEMISTRY_OPS,
+    "biology": _BIOLOGY_OPS,
     "graph": _GRAPH_OPS,
 }
 
@@ -310,6 +389,14 @@ def _run_self_test() -> None:
         ("differentiate x^3", process_text("differentiate x^3")),
         ("72 km/h to m/s", process_text("72 km/h to m/s")),
         ("force with m=2 a=5", process_text("force m=2 a=5")),
+        ("molar mass of H2O", process_json({"type": "chemistry", "operation": "molar_mass",
+                                             "formula": "H2O"})),
+        ("ph of 1e-4", process_json({"type": "chemistry", "operation": "ph_from_h_concentration",
+                                      "h_conc": 1e-4})),
+        ("hardy-weinberg q2=0.09", process_json({"type": "biology", "operation": "hardy_weinberg",
+                                                   "recessive_phenotype_freq": 0.09})),
+        ("monohybrid cross Aa x Aa", process_json({"type": "biology", "operation": "cross",
+                                                     "parent1": "Aa", "parent2": "Aa"})),
     ]
     ok = True
     for label, result in checks:

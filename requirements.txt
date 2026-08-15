@@ -14,3 +14,5 @@ scikit-learn>=1.4
 Pillow>=10.2
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
+chempy>=0.9.0
+biopython>=1.84
