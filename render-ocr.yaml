@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: studydesk-jee-engine
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: JEE_CORS_ORIGINS
+        value: https://studydesk.fun
+      - key: JEE_REQUIRE_API_KEY
+        value: "0"
